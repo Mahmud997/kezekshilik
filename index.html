@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>School Attendance Pro</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+<style>
+*{box-sizing:border-box;font-family:Inter,Segoe UI,Arial,sans-serif}
+body{margin:0;background:#f1f5f9;color:#172033}.hidden{display:none!important}
+.container{max-width:1250px;margin:20px auto;padding:24px;background:#fff;border-radius:16px;box-shadow:0 8px 30px #0000000d}
+.login{max-width:430px;margin:70px auto}.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:20px}
+.nav{display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid #e5e7eb;padding-bottom:10px;margin-bottom:20px}
+.nav button{width:auto;background:#e2e8f0;border:0}.nav button.active{background:#2563eb;color:#fff}
+button{padding:10px 14px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;cursor:pointer}
+.primary{background:#2563eb;color:#fff;border:0}.danger{background:#dc2626;color:#fff;border:0}.success{background:#16a34a;color:#fff;border:0}
+input,select{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px}
+.card{border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:18px;background:#fff}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.charts{display:grid;grid-template-columns:1fr 1fr;gap:14px}.chart-box{min-height:300px}.link{border:0;background:none;padding:0;color:#2563eb;text-decoration:underline}.small{padding:6px 9px;font-size:12px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.stat{padding:18px;border-radius:12px;background:#f8fafc;border:1px solid #e5e7eb}.stat b{display:block;font-size:30px;margin-top:6px}
+.tab{display:none}.tab.active{display:block}.form-group{margin-bottom:12px}label{display:block;font-weight:600;margin-bottom:5px}
+.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px solid #e5e7eb;text-align:left;white-space:nowrap}th{background:#f8fafc}
+.badge{display:inline-block;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:700}.late{background:#fef3c7;color:#92400e}.absent{background:#fee2e2;color:#991b1b}
+.muted{color:#64748b}.error{color:#b91c1c}.successText{color:#15803d}.actions{display:flex;gap:6px;flex-wrap:wrap}
+@media(max-width:850px){.grid{grid-template-columns:1fr 1fr}.charts{grid-template-columns:1fr}}@media(max-width:600px){body{margin:0}.container{margin:0;border-radius:0;padding:14px}.top,.grid2{display:block}.grid{grid-template-columns:1fr 1fr}.top button{margin-top:10px;width:100%}.nav button{width:100%}}
+</style>
+</head>
+<body>
+
+<div id="loginScreen" class="container login">
+<h2>School Attendance Pro</h2><p class="muted">Вход в школьную систему</p>
+<div class="form-group"><label>Email</label><input id="loginEmail" type="email" autocomplete="username"></div>
+<div class="form-group"><label>Пароль</label><input id="loginPassword" type="password" autocomplete="current-password"></div>
+<button class="primary" onclick="login()">Войти</button><p id="loginStatus"></p>
+</div>
+
+<div id="app" class="container hidden">
+<div class="top"><div><h2 style="margin:0">Учет посещаемости</h2><span id="userInfo" class="muted"></span></div><button onclick="logout()">Выйти</button></div>
+<div class="nav">
+<button id="btnDashboard" class="active" onclick="switchTab('dashboard')">📊 Главная</button>
+<button id="btnDuty" onclick="switchTab('duty')">📝 Отметка</button>
+<button id="btnJournal" onclick="switchTab('journal')">📚 Журнал</button>
+<button id="btnStudents" onclick="switchTab('students')">👨‍🎓 Ученики</button>
+<button id="btnAdmin" class="hidden" onclick="switchTab('admin')">⚙️ Админ</button>
+</div>
+
+<section id="tabDashboard" class="tab active">
+<h3>Сегодня</h3>
+<div class="grid">
+<div class="stat">Всего записей<b id="statTotal">0</b></div>
+<div class="stat">Опозданий<b id="statLate">0</b></div>
+<div class="stat">Отсутствий<b id="statAbsent">0</b></div>
+<div class="stat">Классов<b id="statClasses">0</b></div>
+</div>
+<div class="charts" style="margin-top:18px"><div class="card chart-box"><h4>По классам сегодня</h4><canvas id="classChart"></canvas></div><div class="card chart-box"><h4>Статусы сегодня</h4><canvas id="statusChart"></canvas></div></div>
+<div class="card" style="margin-top:18px"><h4>Последние записи</h4><div class="table-wrap"><table><thead><tr><th>Время</th><th>ФИО</th><th>Класс</th><th>Статус</th></tr></thead><tbody id="dashboardTable"></tbody></table></div></div>
+</section>
+
+<section id="tabDuty" class="tab">
+<h3>Отметка посещаемости</h3>
+<div class="card">
+<div class="form-group"><label>Ученик</label><input list="studentsList" id="studentInput" placeholder="ФИО или класс" onchange="handleStudentSelect()"><datalist id="studentsList"></datalist></div>
+<div class="grid2">
+<div class="form-group"><label>Класс</label><input id="studentClass" disabled></div>
+<div class="form-group"><label>Статус</label><select id="statusType"><option value="Опоздал">Опоздал(а)</option><option value="Отсутствует">Отсутствует</option></select></div>
+</div>
+<div class="form-group"><label>Примечание</label><input id="recordNote" placeholder="Причина, время задержки и т.п."></div>
+<button class="primary" onclick="submitRecord()">Сохранить отметку</button>
+</div>
+<div class="card"><h4>Записи за сегодня</h4><div class="table-wrap"><table><thead><tr><th>Время</th><th>ФИО</th><th>Класс</th><th>Статус</th><th>Примечание</th><th></th></tr></thead><tbody id="todayTable"></tbody></table></div></div>
+</section>
+
+<section id="tabJournal" class="tab">
+<h3>Журнал</h3>
+<div class="card">
+<div class="grid">
+<div><label>Период</label><select id="journalPeriod"><option value="day">Сегодня</option><option value="week">7 дней</option><option value="month">30 дней</option><option value="quarter">90 дней</option></select></div>
+<div><label>Класс</label><select id="classFilter"><option value="">Все классы</option></select></div>
+<div><label>Статус</label><select id="statusFilter"><option value="">Все</option><option value="Опоздал">Опоздания</option><option value="Отсутствует">Отсутствия</option></select></div>
+<div style="align-self:end"><button class="primary" onclick="loadJournal()">Показать</button></div>
+</div>
+</div>
+<div class="card"><div class="actions"><button class="primary" onclick="exportJournal()">📥 Экспорт Excel</button></div>
+<div class="table-wrap"><table><thead><tr><th>Дата</th><th>ФИО</th><th>Класс</th><th>Статус</th><th>Примечание</th><th></th></tr></thead><tbody id="journalTable"></tbody></table></div></div>
+</section>
+
+
+<section id="tabStudents" class="tab">
+<h3>Ученики</h3>
+<div class="card"><div class="grid2"><div><label>Поиск</label><input id="studentSearch" placeholder="ФИО" oninput="loadStudentDirectory()"></div><div><label>Класс</label><select id="studentClassFilter" onchange="loadStudentDirectory()"><option value="">Все классы</option></select></div></div><p class="muted">Найдено: <b id="studentCount">0</b></p><div class="table-wrap"><table><thead><tr><th>ФИО</th><th>Класс</th></tr></thead><tbody id="studentDirectory"></tbody></table></div></div>
+<div id="studentProfile" class="card hidden"><div class="top"><div><h3 id="profileName" style="margin:0"></h3><span id="profileClass" class="muted"></span></div><button onclick="closeStudent()">Закрыть</button></div><div class="grid"><div class="stat">Всего<b id="profileTotal">0</b></div><div class="stat">Опозданий<b id="profileLate">0</b></div><div class="stat">Отсутствий<b id="profileAbsent">0</b></div><div class="stat">Доля нарушений<b id="profileRate">—</b></div></div><div class="table-wrap" style="margin-top:18px"><table><thead><tr><th>Дата</th><th>Статус</th><th>Примечание</th></tr></thead><tbody id="profileTable"></tbody></table></div></div>
+</section>
+
+<section id="tabAdmin" class="tab">
+<h3>Администратор</h3>
+<div class="card"><h4>Импорт учеников</h4><p class="muted">Excel: ФИО/Name/FIO и Класс/Grade.</p><input type="file" id="excelFile" accept=".xlsx,.xls"><button class="primary" style="margin-top:10px" onclick="uploadExcel()">Импортировать</button><p id="importStatus"></p></div>
+<div class="card"><h4>Отчет</h4><div class="grid2"><select id="reportPeriod"><option value="day">Сегодня</option><option value="week">7 дней</option><option value="month">30 дней</option><option value="quarter">90 дней</option></select><button class="primary" onclick="generateReport()">Сформировать</button></div><div class="table-wrap"><table><thead><tr><th>Дата</th><th>ФИО</th><th>Класс</th><th>Статус</th><th>Примечание</th></tr></thead><tbody id="reportTable"></tbody></table></div><button class="primary" onclick="exportReport()">📥 Скачать Excel</button></div>
+</section>
+</div>
+
+<script src="config.js"></script><script src="app.js"></script>
+</body></html>
